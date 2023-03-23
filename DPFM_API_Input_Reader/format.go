@@ -4,9 +4,9 @@ import (
 	"convert-to-dpfm-invoice-document-from-invoices-edi-for-smes/DPFM_API_Caller/requests"
 )
 
-func (sdc *SDC) ConvertToHeader() *requests.InvoicesEDIForSMEsHeader {
-	data := sdc.InvoicesEDIForSMEsHeader
-	return &requests.InvoicesEDIForSMEsHeader{
+func (sdc *SDC) ConvertToHeader() *requests.Header {
+	data := sdc.Header
+	return &requests.Header{
 		ExchangedInvoiceDocumentIdentifier:                                           data.ExchangedInvoiceDocumentIdentifier,
 		InvoiceDocument:                                                              data.InvoiceDocument,
 		ExchangedDocumentContextSpecifiedTransactionIdentifier:                       data.ExchangedDocumentContextSpecifiedTransactionIdentifier,
@@ -21,7 +21,7 @@ func (sdc *SDC) ConvertToHeader() *requests.InvoicesEDIForSMEsHeader {
 		DocumentContextParameterApplicationValueText:                                 data.DocumentContextParameterApplicationValueText,
 		DocumentContextParameterBusinessFieldIdentifier:                              data.DocumentContextParameterBusinessFieldIdentifier,
 		DocumentContextParameterBusinessFieldValueText:                               data.DocumentContextParameterBusinessFieldValueText,
-		DocumentVersionIdentifierOfBusinessFunction:                                  data.DocumentVersionIdentifierOfBusinessFunction,
+		DocumentVersionIdentificationIdentifierOfBusinessFunction:                    data.DocumentVersionIdentificationIdentifierOfBusinessFunction,
 		DocumentVersionIssueDateOfBusinessFunction:                                   data.DocumentVersionIssueDateOfBusinessFunction,
 		ExchangedInvoiceDocumentName:                                                 data.ExchangedInvoiceDocumentName,
 		ExchangedInvoiceDocumentTypeCode:                                             data.ExchangedInvoiceDocumentTypeCode,
@@ -67,7 +67,7 @@ func (sdc *SDC) ConvertToHeader() *requests.InvoicesEDIForSMEsHeader {
 		TradeContactBuyerPersonName:                                                  data.TradeContactBuyerPersonName,
 		TradeContactBuyerDepartmentName:                                              data.TradeContactBuyerDepartmentName,
 		TradeContactBuyerPersonIdentifier:                                            data.TradeContactBuyerPersonIdentifier,
-		BuyerTelephoneNumber:                                                         data.BuyerTelephoneNumber,
+		BuyerPhoneNumber:                                                             data.BuyerPhoneNumber,
 		BuyerFaxNumber:                                                               data.BuyerFaxNumber,
 		BuyerEmailAddress:                                                            data.BuyerEmailAddress,
 		BuyerAddressPostalCode:                                                       data.BuyerAddressPostalCode,
@@ -166,12 +166,11 @@ func (sdc *SDC) ConvertToHeader() *requests.InvoicesEDIForSMEsHeader {
 	}
 }
 
-func (sdc *SDC) ConvertToItem(num int) *requests.InvoicesEDIForSMEsItem {
-	dataHeader := sdc.InvoicesEDIForSMEsHeader
-	data := sdc.InvoicesEDIForSMEsHeader.InvoicesEDIForSMEsItem[num]
+func (sdc *SDC) ConvertToItem(num int) *requests.Item {
+	data := sdc.Header.Item[num]
 
-	return &requests.InvoicesEDIForSMEsItem{
-		ExchangedInvoiceDocumentIdentifier:                               dataHeader.ExchangedInvoiceDocumentIdentifier,
+	return &requests.Item{
+		ExchangedInvoiceDocumentIdentifier:                               data.ExchangedInvoiceDocumentIdentifier,
 		InvoiceDocumentItemIdentifier:                                    data.InvoiceDocumentItemIdentifier,
 		InvoiceDocumentItemCategoryCode:                                  data.InvoiceDocumentItemCategoryCode,
 		ReferencedSalesOrderDocumentIssuerAssignedIdentifier:             data.ReferencedSalesOrderDocumentIssuerAssignedIdentifier,

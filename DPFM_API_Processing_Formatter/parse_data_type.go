@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func ParseInt(s string) (int, error) {
+func parseInt(s string) (int, error) {
 	res, err := strconv.Atoi(s)
 	if err != nil {
 		return 0, err
@@ -14,7 +14,7 @@ func ParseInt(s string) (int, error) {
 	return res, nil
 }
 
-func ParseIntPtr(s *string) (*int, error) {
+func parseIntPtr(s *string) (*int, error) {
 	if s == nil {
 		return nil, nil
 	} else if *s == "" {
@@ -29,11 +29,11 @@ func ParseIntPtr(s *string) (*int, error) {
 	return &res, nil
 }
 
-func GetIntPtr(i int) *int {
+func getIntPtr(i int) *int {
 	return &i
 }
 
-func ParseFloat32Ptr(s *string) (*float32, error) {
+func parseFloat32Ptr(s *string) (*float32, error) {
 	if s == nil {
 		return nil, nil
 	} else if *s == "" {
@@ -50,11 +50,11 @@ func ParseFloat32Ptr(s *string) (*float32, error) {
 	return &res, nil
 }
 
-func GetFloat32Ptr(f float32) *float32 {
+func getFloat32Ptr(f float32) *float32 {
 	return &f
 }
 
-func ParseBoolPtr(s *string) (*bool, error) {
+func parseBoolPtr(s *string) (*bool, error) {
 	if s == nil {
 		return nil, nil
 	} else if *s == "" {
@@ -69,24 +69,24 @@ func ParseBoolPtr(s *string) (*bool, error) {
 	return &res, nil
 }
 
-func GetBoolPtr(b bool) *bool {
+func getBoolPtr(b bool) *bool {
 	return &b
 }
 
-func GetStringPtr(s string) *string {
-	return &s
-}
-
-func GetSystemDatePtr() *string {
+func getSystemDatePtr() *string {
 	day := time.Now()
 	res := day.Format("2006-01-02")
 
 	return &res
 }
 
-func GetSystemTimePtr() *string {
+func getSystemTimePtr() *string {
 	day := time.Now()
 	res := day.Format("15:04:05")
 
 	return &res
+}
+
+func getStringPtr(s string) *string {
+	return &s
 }

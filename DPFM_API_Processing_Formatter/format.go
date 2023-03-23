@@ -1,403 +1,462 @@
 package dpfm_api_processing_formatter
 
 import (
-	"convert-to-dpfm-invoice-document-from-invoices-edi-for-smes/DPFM_API_Caller/requests"
+	"context"
 	dpfm_api_input_reader "convert-to-dpfm-invoice-document-from-invoices-edi-for-smes/DPFM_API_Input_Reader"
-	"database/sql"
-	"fmt"
-	"strconv"
+	"sync"
+
+	"github.com/latonaio/golang-logging-library-for-data-platform/logger"
+	database "github.com/latonaio/golang-mysql-network-connector"
+	"golang.org/x/xerrors"
 )
 
-// データ連携基盤とInvoices EDI For SMEsとの項目マッピング
-// Header
-func (psdc *SDC) ConvertToMappingHeader(sdc *dpfm_api_input_reader.SDC) (*MappingHeader, error) {
-	data := sdc.InvoicesEDIForSMEsHeader
-
-	systemDate := GetSystemDatePtr()
-	systemTime := GetSystemTimePtr()
-
-	res := MappingHeader{
-		CreationDate:           systemDate,
-		CreationTime:           systemTime,
-		LastChangeDate:         systemDate,
-		LastChangeTime:         systemTime,
-		InvoiceDocumentDate:    data.ExchangedInvoiceDocumentIssueDate,
-		InvoicePeriodStartDate: data.InvoiceDocumentSpecifiedPeriodStartDate,
-		InvoicePeriodEndDate:   data.InvoiceDocumentSpecifiedPeriodEndDate,
-		AccountingPostingDate:  data.ExchangedInvoiceDocumentIssueDate,
-		TotalNetAmount:         data.TradeInvoiceDocumentSettlementMonetarySummationTaxBasisTotalAmount,
-		TotalTaxAmount:         data.TradeTaxCalculatedAmount,
-		TotalGrossAmount:       data.TradeInvoiceDocumentSettlementMonetarySummationGrandTotalAmount,
-		TransactionCurrency:    data.SupplyChainTradeSettlementPaymentCurrencyCode,
-		PaymentTerms:           data.TradePaymentTermsTypeCode,
-		PaymentDueDate:         data.TradeSettlementPaymentMeansTypeCode,
-		DocumentHeaderText:     data.InvoiceDocument,
-	}
-
-	return &res, nil
+type ProcessingFormatter struct {
+	ctx context.Context
+	db  *database.Mysql
+	l   *logger.Logger
 }
 
-// Item
-func (psdc *SDC) ConvertToMappingItem(sdc *dpfm_api_input_reader.SDC) (*[]MappingItem, error) {
-	var res []MappingItem
-	data := sdc.InvoicesEDIForSMEsHeader
-	dataItem := sdc.InvoicesEDIForSMEsHeader.InvoicesEDIForSMEsItem
-
-	for _, dataItem := range dataItem {
-		systemDate := GetSystemDatePtr()
-		systemTime := GetSystemTimePtr()
-
-		res = append(res, MappingItem{
-			ExchangedInvoiceDocumentIdentifier: data.ExchangedInvoiceDocumentIdentifier,
-			InvoiceDocumentItemText:            dataItem.TradeProductName,
-			CreationDate:                       systemDate,
-			CreationTime:                       systemTime,
-			LastChangeDate:                     systemDate,
-			LastChangeTime:                     systemTime,
-			InvoiceQuantity:                    dataItem.SupplyChainTradeDeliveryItemLineProductBilledQuantity,
-			InvoiceQuantityUnit:                dataItem.SupplyChainTradeDeliveryItemLineProductQuantityUnitCode,
-			InvoiceQuantityInBaseUnit:          dataItem.TradePriceBasisQuantity,
-			BaseUnit:                           dataItem.TradePriceBasisQuantityUnitCode,
-			NetAmount:                          dataItem.ItemLineTradeTaxBasisAmount,
-			GrossAmount:                        dataItem.ItemLineTradeTaxGrandTotalAmount,
-			TransactionCurrency:                data.SupplyChainTradeSettlementPaymentCurrencyCode,
-			InvoicePeriodStartDate:             dataItem.ItemLineSpecifiedPeriodStartDate,
-			InvoicePeriodEndDate:               dataItem.ItemLineSpecifiedPeriodEndDate,
-		})
+func NewProcessingFormatter(ctx context.Context, db *database.Mysql, l *logger.Logger) *ProcessingFormatter {
+	return &ProcessingFormatter{
+		ctx: ctx,
+		db:  db,
+		l:   l,
 	}
-
-	return &res, nil
 }
 
-// ItemPricingElement
-func (psdc *SDC) ConvertToMappingItemPricingElement(sdc *dpfm_api_input_reader.SDC) (*[]MappingItemPricingElement, error) {
-	var res []MappingItemPricingElement
-	data := sdc.InvoicesEDIForSMEsHeader
-	dataItem := sdc.InvoicesEDIForSMEsHeader.InvoicesEDIForSMEsItem
+func (p *ProcessingFormatter) ProcessingFormatter(
+	sdc *dpfm_api_input_reader.SDC,
+	psdc *ProcessingFormatterSDC,
+) error {
+	var err error
+	var e error
 
-	for _, dataItem := range dataItem {
-
-		res = append(res, MappingItemPricingElement{
-			ExchangedInvoiceDocumentIdentifier: data.ExchangedInvoiceDocumentIdentifier,
-			InvoiceDocumentItemIdentifier:      dataItem.InvoiceDocumentItemIdentifier,
-			ConditionRateValue:                 dataItem.TradePriceChargeAmount,
-			ConditionCurrency:                  data.SupplyChainTradeSettlementPaymentCurrencyCode,
-			ConditionQuantity:                  dataItem.TradePriceBasisQuantity,
-			ConditionQuantityUnit:              dataItem.TradePriceBasisQuantityUnitCode,
-			ConditionAmount:                    dataItem.ItemLineTradeTaxGrandTotalAmount,
-			TransactionCurrency:                data.SupplyChainTradeSettlementPaymentCurrencyCode,
-		})
+	if bpIDIsNull(sdc) {
+		return xerrors.New("business_partner is null")
 	}
 
-	return &res, nil
+	wg := sync.WaitGroup{}
+
+	psdc.Header = p.Header(sdc, psdc)
+
+	wg.Add(1)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		// Ref: Header
+		psdc.ConversionProcessingHeader, e = p.ConversionProcessingHeader(sdc, psdc)
+		if e != nil {
+			err = e
+			return
+		}
+	}(&wg)
+
+	wg.Add(1)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		// Ref: Header
+		psdc.Item = p.Item(sdc, psdc)
+
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			defer wg.Done()
+			// Ref: Item
+			psdc.ConversionProcessingItem, e = p.ConversionProcessingItem(sdc, psdc)
+			if e != nil {
+				err = e
+				return
+			}
+		}(wg)
+	}(&wg)
+
+	wg.Add(1)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		// Ref: Header
+		psdc.Address = p.Address(sdc, psdc)
+	}(&wg)
+
+	wg.Add(1)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		// Ref: Header
+		psdc.Partner = p.Partner(sdc, psdc)
+	}(&wg)
+
+	wg.Wait()
+	if err != nil {
+		return err
+	}
+
+	p.l.Info(psdc)
+
+	return nil
 }
 
-// Partner
-func (psdc *SDC) ConvertToMappingPartner(sdc *dpfm_api_input_reader.SDC) (*[]MappingPartner, error) {
-	var res []MappingPartner
-	data := sdc.InvoicesEDIForSMEsHeader
-	dataPartner := sdc.InvoicesEDIForSMEsHeader.InvoicesEDIForSMEsItem
+func (p *ProcessingFormatter) Header(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) *Header {
+	data := sdc.Header
 
-	for range dataPartner {
-		res = append(res, MappingPartner{
-			ExchangedInvoiceDocumentIdentifier: data.ExchangedInvoiceDocumentIdentifier,
-		})
-	}
+	systemDate := getSystemDatePtr()
+	systemTime := getSystemTimePtr()
 
-	return &res, nil
-}
-
-// 番号処理
-func (psdc *SDC) ConvertToCodeConversionKey(sdc *dpfm_api_input_reader.SDC, labelConvertFrom, labelConvertTo string, codeConvertFrom any) *CodeConversionKey {
-	pm := &requests.CodeConversionKey{
-		SystemConvertTo:   "DPFM",
-		SystemConvertFrom: "SAP",
-		BusinessPartner:   *sdc.BusinessPartnerID,
-	}
-
-	pm.LabelConvertFrom = labelConvertFrom
-	pm.LabelConvertTo = labelConvertTo
-
-	switch codeConvertFrom := codeConvertFrom.(type) {
-	case string:
-		pm.CodeConvertFrom = codeConvertFrom
-	case int:
-		pm.CodeConvertFrom = strconv.FormatInt(int64(codeConvertFrom), 10)
-	case float32:
-		pm.CodeConvertFrom = strconv.FormatFloat(float64(codeConvertFrom), 'f', -1, 32)
-	case bool:
-		pm.CodeConvertFrom = strconv.FormatBool(codeConvertFrom)
-	case *string:
-		if codeConvertFrom != nil {
-			pm.CodeConvertFrom = *codeConvertFrom
-		}
-	case *int:
-		if codeConvertFrom != nil {
-			pm.CodeConvertFrom = strconv.FormatInt(int64(*codeConvertFrom), 10)
-		}
-	case *float32:
-		if codeConvertFrom != nil {
-			pm.CodeConvertFrom = strconv.FormatFloat(float64(*codeConvertFrom), 'f', -1, 32)
-		}
-	case *bool:
-		if codeConvertFrom != nil {
-			pm.CodeConvertFrom = strconv.FormatBool(*codeConvertFrom)
-		}
-	}
-
-	data := pm
-	res := CodeConversionKey{
-		SystemConvertTo:   data.SystemConvertTo,
-		SystemConvertFrom: data.SystemConvertFrom,
-		LabelConvertTo:    data.LabelConvertTo,
-		LabelConvertFrom:  data.LabelConvertFrom,
-		CodeConvertFrom:   data.CodeConvertFrom,
-		BusinessPartner:   data.BusinessPartner,
+	res := Header{
+		ConvertingInvoiceDocument:         data.ExchangedInvoiceDocumentIdentifier,
+		CreationDate:                      systemDate,
+		CreationTime:                      systemTime,
+		LastChangeDate:                    systemDate,
+		LastChangeTime:                    systemTime,
+		ConvertingBillToParty:             data.TradeBillToPartyRegisteredIdentifier,
+		ConvertingBillFromParty:           data.TradeBillFromPartyIdentifier,
+		ConvertingPayer:                   data.TradeBillToPartyRegisteredIdentifier,
+		ConvertingPayee:                   data.TradeBillFromPartyIdentifier,
+		InvoiceDocumentDate:               data.ExchangedInvoiceDocumentIssueDate,
+		InvoicePeriodStartDate:            data.InvoiceDocumentSpecifiedPeriodStartDate,
+		InvoicePeriodEndDate:              data.InvoiceDocumentSpecifiedPeriodEndDate,
+		AccountingPostingDate:             data.ExchangedInvoiceDocumentIssueDate,
+		TotalNetAmount:                    data.TradeInvoiceDocumentSettlementMonetarySummationTaxBasisTotalAmount,
+		TotalTaxAmount:                    data.TradeTaxCalculatedAmount,
+		TotalGrossAmount:                  data.TradeInvoiceDocumentSettlementMonetarySummationGrandTotalAmount,
+		TransactionCurrency:               data.SupplyChainTradeSettlementPaymentCurrencyCode,
+		PaymentTerms:                      data.TradePaymentTermsTypeCode,
+		PaymentDueDate:                    data.TradePaymentTermsDueDate,
+		ConvertingPaymentMethod:           data.TradePaymentTermsTypeCode,
+		DocumentHeaderText:                data.InvoiceDocument,
+		HeaderIsCleared:                   getBoolPtr(false),
+		HeaderPaymentBlockStatus:          getBoolPtr(false),
+		HeaderPaymentRequisitionIsCreated: getBoolPtr(false),
+		IsCancelled:                       getBoolPtr(false),
 	}
 
 	return &res
 }
 
-func (psdc *SDC) ConvertToCodeConversionQueryGets(rows *sql.Rows) (*[]CodeConversionQueryGets, error) {
-	defer rows.Close()
-	var res []CodeConversionQueryGets
+func (p *ProcessingFormatter) ConversionProcessingHeader(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) (*ConversionProcessingHeader, error) {
+	dataKey := make([]*ConversionProcessingKey, 0)
 
-	i := 0
-	for rows.Next() {
-		i++
-		pm := &requests.CodeConversionQueryGets{}
+	p.appendDataKey(&dataKey, sdc, "ExchangedInvoiceDocumentIdentifier", "InvoiceDocument", psdc.Header.ConvertingInvoiceDocument)
+	p.appendDataKey(&dataKey, sdc, "TradeBillToPartyRegisteredIdentifier", "BillToParty", psdc.Header.ConvertingBillToParty)
+	p.appendDataKey(&dataKey, sdc, "TradeBillFromPartyIdentifier", "BillFromParty", psdc.Header.ConvertingBillFromParty)
+	p.appendDataKey(&dataKey, sdc, "TradePaymentTermsTypeCode", "PaymentMethod", psdc.Header.ConvertingPaymentMethod)
 
-		err := rows.Scan(
-			&pm.CodeConversionID,
-			&pm.SystemConvertTo,
-			&pm.SystemConvertFrom,
-			&pm.LabelConvertTo,
-			&pm.LabelConvertFrom,
-			&pm.CodeConvertFrom,
-			&pm.CodeConvertTo,
-			&pm.BusinessPartner,
-		)
+	dataQueryGets, err := p.ConversionProcessingCommonQueryGets(dataKey)
+	if err != nil {
+		return nil, xerrors.Errorf("ConversionProcessing Error: %w", err)
+	}
+
+	data, err := p.ConvertToConversionProcessingHeader(dataKey, dataQueryGets)
+	if err != nil {
+		return nil, xerrors.Errorf("ConvertToConversionProcessing Error: %w", err)
+	}
+
+	return data, nil
+}
+
+func (psdc *ProcessingFormatter) ConvertToConversionProcessingHeader(conversionProcessingKey []*ConversionProcessingKey, conversionProcessingCommonQueryGets []*ConversionProcessingCommonQueryGets) (*ConversionProcessingHeader, error) {
+	data := make(map[string]*ConversionProcessingCommonQueryGets, len(conversionProcessingCommonQueryGets))
+	for _, v := range conversionProcessingCommonQueryGets {
+		data[v.LabelConvertTo] = v
+	}
+
+	for _, v := range conversionProcessingKey {
+		if _, ok := data[v.LabelConvertTo]; !ok {
+			return nil, xerrors.Errorf("Value of %s is not in the database", v.LabelConvertTo)
+		}
+	}
+
+	res := &ConversionProcessingHeader{}
+
+	if _, ok := data["InvoiceDocument"]; ok {
+		res.ConvertingInvoiceDocument = data["InvoiceDocument"].CodeConvertFromString
+		res.ConvertedInvoiceDocument = data["InvoiceDocument"].CodeConvertToInt
+	}
+	if _, ok := data["BillToParty"]; ok {
+		res.ConvertingBillToParty = data["BillToParty"].CodeConvertFromString
+		res.ConvertedBillToParty = data["BillToParty"].CodeConvertToInt
+		res.ConvertedPayer = data["BillToParty"].CodeConvertToInt
+	}
+	if _, ok := data["BillFromParty"]; ok {
+		res.ConvertingBillFromParty = data["BillFromParty"].CodeConvertFromString
+		res.ConvertedBillFromParty = data["BillFromParty"].CodeConvertToInt
+		res.ConvertedPayee = data["BillFromParty"].CodeConvertToInt
+	}
+	if _, ok := data["Payer"]; ok {
+		res.ConvertingPayer = data["Payer"].CodeConvertFromString
+		res.ConvertedPayer = data["Payer"].CodeConvertToInt
+	}
+	if _, ok := data["Payee"]; ok {
+		res.ConvertingPayee = data["Payee"].CodeConvertFromString
+		res.ConvertedPayee = data["Payee"].CodeConvertToInt
+	}
+	if _, ok := data["PaymentMethod"]; ok {
+		res.ConvertingPaymentMethod = data["PaymentMethod"].CodeConvertFromString
+		res.ConvertedPaymentMethod = data["PaymentMethod"].CodeConvertToString
+	}
+
+	return res, nil
+}
+
+func (p *ProcessingFormatter) Item(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) []*Item {
+	res := make([]*Item, 0)
+	dataHeader := psdc.Header
+	data := sdc.Header.Item
+
+	systemDate := getSystemDatePtr()
+	systemTime := getSystemTimePtr()
+
+	for _, data := range data {
+
+		res = append(res, &Item{
+			ConvertingInvoiceDocument:              dataHeader.ConvertingInvoiceDocument,
+			ConvertingInvoiceDocumentItem:          data.InvoiceDocumentItemIdentifier,
+			InvoiceDocumentItemText:                data.TradeProductName,
+			ConvertingProduct:                      data.TradeProductIdentifier,
+			CreationDate:                           systemDate,
+			CreationTime:                           systemTime,
+			LastChangeDate:                         systemDate,
+			LastChangeTime:                         systemTime,
+			ConvertingBuyer:                        sdc.Header.TradeBuyerIdentifier,
+			ConvertingSeller:                       sdc.Header.TradeSellerIdentifier,
+			ConvertingDeliverToParty:               data.TradeShipToPartyIdentifier,
+			InvoiceQuantity:                        data.SupplyChainTradeDeliveryItemLineProductBilledQuantity,
+			InvoiceQuantityUnit:                    data.SupplyChainTradeDeliveryItemLineProductQuantityUnitCode,
+			InvoiceQuantityInBaseUnit:              data.TradePriceBasisQuantity,
+			BaseUnit:                               data.TradePriceBasisQuantityUnitCode,
+			NetAmount:                              data.ItemLineTradeTaxBasisAmount,
+			GrossAmount:                            data.ItemLineTradeTaxGrandTotalAmount,
+			TransactionCurrency:                    sdc.Header.SupplyChainTradeSettlementPaymentCurrencyCode,
+			ConvertingTransactionTaxClassification: data.ItemLineTradeTaxCategoryCode,
+			ConvertingProject:                      sdc.Header.ProjectIdentifier,
+			ConvertingOrderID:                      data.ItemLineReferencedOrdersDocumentIssuerAssignedIdentifier,
+			ConvertingOrderItem:                    data.ItemLineReferencedOrdersDocumentItemLineIssuerAssignedIdentifier,
+			InvoicePeriodStartDate:                 data.ItemLineSpecifiedPeriodStartDate,
+			InvoicePeriodEndDate:                   data.ItemLineSpecifiedPeriodEndDate,
+			ConvertingDeliveryDocument:             data.ItemLineReferencedOrdersDocumentIssuerAssignedIdentifier,
+			ConvertingDeliveryDocumentItem:         data.ItemLineReferencedOrdersDocumentItemLineIssuerAssignedIdentifier,
+			ConvertingOriginDocument:               data.ItemLineReferencedOrdersDocumentIssuerAssignedIdentifier,
+			ConvertingOriginDocumentItem:           data.ItemLineReferencedOrdersDocumentItemLineIssuerAssignedIdentifier,
+			ConvertingReferenceDocument:            data.ItemLineReferencedOrdersDocumentIssuerAssignedIdentifier,
+			ConvertingReferenceDocumentItem:        data.ItemLineReferencedOrdersDocumentItemLineIssuerAssignedIdentifier,
+			ItemPaymentRequisitionIsCreated:        getBoolPtr(false),
+			ItemIsCleared:                          getBoolPtr(false),
+			ItemPaymentBlockStatus:                 getBoolPtr(false),
+			IsCancelled:                            getBoolPtr(false),
+		})
+	}
+
+	return res
+}
+
+func (p *ProcessingFormatter) ConversionProcessingItem(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) ([]*ConversionProcessingItem, error) {
+	data := make([]*ConversionProcessingItem, 0)
+
+	for _, item := range psdc.Item {
+		dataKey := make([]*ConversionProcessingKey, 0)
+
+		p.appendDataKey(&dataKey, sdc, "InvoiceDocumentItemIdentifier", "InvoiceDocumentItem", item.ConvertingInvoiceDocumentItem)
+		p.appendDataKey(&dataKey, sdc, "TradeProductIdentifier", "Product", item.ConvertingProduct)
+		p.appendDataKey(&dataKey, sdc, "TradeBuyerIdentifier ", "Buyer", item.ConvertingBuyer)
+		p.appendDataKey(&dataKey, sdc, "TradeSellerIdentifier", "Seller", item.ConvertingSeller)
+		p.appendDataKey(&dataKey, sdc, "TradeShipToPartyIdentifier", "DeliverToParty", item.ConvertingDeliverToParty)
+		p.appendDataKey(&dataKey, sdc, "ItemTradeTaxCategoryCode", "TransactionTaxClassification", item.ConvertingTransactionTaxClassification)
+		p.appendDataKey(&dataKey, sdc, "ProjectIdentifier", "Project", item.ConvertingProject)
+		p.appendDataKey(&dataKey, sdc, "ItemLineReferencedOrdersDocumentIssuerAssignedIdentifier", "OrderID", item.ConvertingOrderID)
+		p.appendDataKey(&dataKey, sdc, "ItemLineReferencedOrdersDocumentItemLineIssuerAssignedIdentifier", "OrderItem", item.ConvertingOrderItem)
+
+		dataQueryGets, err := p.ConversionProcessingCommonQueryGets(dataKey)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("ConversionProcessing Error: %w", err)
 		}
 
-		data := pm
-		res = append(res, CodeConversionQueryGets{
-			CodeConversionID:  data.CodeConversionID,
-			SystemConvertTo:   data.SystemConvertTo,
-			SystemConvertFrom: data.SystemConvertFrom,
-			LabelConvertTo:    data.LabelConvertTo,
-			LabelConvertFrom:  data.LabelConvertFrom,
-			CodeConvertFrom:   data.CodeConvertFrom,
-			CodeConvertTo:     data.CodeConvertTo,
-			BusinessPartner:   data.BusinessPartner,
-		})
-	}
-	if i == 0 {
-		return nil, fmt.Errorf("'data_platform_code_conversion_code_conversion_data'テーブルに対象のレコードが存在しません。")
+		datum, err := p.ConvertToConversionProcessingItem(dataKey, dataQueryGets)
+		if err != nil {
+			return nil, xerrors.Errorf("ConvertToConversionProcessing Error: %w", err)
+		}
+
+		data = append(data, datum)
 	}
 
-	return &res, nil
+	return data, nil
 }
 
-func (psdc *SDC) ConvertToCodeConversionHeader(dataQueryGets *[]CodeConversionQueryGets) (*CodeConversionHeader, error) {
-	var err error
-
-	dataMap := make(map[string]CodeConversionQueryGets, len(*dataQueryGets))
-	for _, v := range *dataQueryGets {
-		dataMap[v.LabelConvertTo] = v
+func (p *ProcessingFormatter) ConvertToConversionProcessingItem(conversionProcessingKey []*ConversionProcessingKey, conversionProcessingCommonQueryGets []*ConversionProcessingCommonQueryGets) (*ConversionProcessingItem, error) {
+	data := make(map[string]*ConversionProcessingCommonQueryGets, len(conversionProcessingCommonQueryGets))
+	for _, v := range conversionProcessingCommonQueryGets {
+		data[v.LabelConvertTo] = v
 	}
 
-	pm := &requests.CodeConversionHeader{}
-
-	pm.ExchangedInvoiceDocumentIdentifier = dataMap["InvoiceDocument"].CodeConvertFrom
-	pm.InvoiceDocument, err = ParseInt(dataMap["InvoiceDocument"].CodeConvertTo)
-	if err != nil {
-		return nil, err
-	}
-	pm.BillToParty, err = ParseIntPtr(GetStringPtr(dataMap["BillToParty"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.BillFromParty, err = ParseIntPtr(GetStringPtr(dataMap["BillFromParty"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.Payer, err = ParseIntPtr(GetStringPtr(dataMap["Payer"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.Payee, err = ParseIntPtr(GetStringPtr(dataMap["Payee"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.PaymentTerms = GetStringPtr(dataMap["PaymentTerms"].CodeConvertFrom)
-	pm.PaymentMethod = GetStringPtr(dataMap["PaymentMethod"].CodeConvertFrom)
-
-	data := pm
-	res := CodeConversionHeader{
-		ExchangedInvoiceDocumentIdentifier: data.ExchangedInvoiceDocumentIdentifier,
-		InvoiceDocument:                    data.InvoiceDocument,
-		BillToParty:                        data.BillToParty,
-		BillFromParty:                      data.BillFromParty,
-		Payer:                              data.Payer,
-		Payee:                              data.Payee,
-		PaymentTerms:                       data.PaymentTerms,
-		PaymentMethod:                      data.PaymentMethod,
+	for _, v := range conversionProcessingKey {
+		if _, ok := data[v.LabelConvertTo]; !ok {
+			return nil, xerrors.Errorf("%s is not in the database", v.LabelConvertTo)
+		}
 	}
 
-	return &res, nil
+	res := &ConversionProcessingItem{}
+
+	if _, ok := data["InvoiceDocumentItem"]; ok {
+		res.ConvertingInvoiceDocumentItem = data["InvoiceDocumentItem"].CodeConvertFromString
+		res.ConvertedInvoiceDocumentItem = data["InvoiceDocumentItem"].CodeConvertToInt
+	}
+	if _, ok := data["Product"]; ok {
+		res.ConvertingProduct = data["Product"].CodeConvertFromString
+		res.ConvertedProduct = data["Product"].CodeConvertToString
+	}
+	if _, ok := data["Buyer"]; ok {
+		res.ConvertingBuyer = data["Buyer"].CodeConvertFromString
+		res.ConvertedBuyer = data["Buyer"].CodeConvertToInt
+	}
+	if _, ok := data["Seller"]; ok {
+		res.ConvertingSeller = data["Seller"].CodeConvertFromString
+		res.ConvertedSeller = data["Seller"].CodeConvertToInt
+	}
+	if _, ok := data["DeliverToParty"]; ok {
+		res.ConvertingDeliverToParty = data["DeliverToParty"].CodeConvertFromString
+		res.ConvertedDeliverToParty = data["DeliverToParty"].CodeConvertToInt
+	}
+	if _, ok := data["Project"]; ok {
+		res.ConvertingProject = data["Project"].CodeConvertFromString
+		res.ConvertedProject = data["Project"].CodeConvertToString
+	}
+	if _, ok := data["TransactionTaxClassification"]; ok {
+		res.ConvertingTransactionTaxClassification = data["TransactionTaxClassification"].CodeConvertFromString
+		res.ConvertedTransactionTaxClassification = data["TransactionTaxClassification"].CodeConvertToString
+	}
+	if _, ok := data["OrderID"]; ok {
+		res.ConvertingOrderID = data["OrderID"].CodeConvertFromString
+		res.ConvertedOrderID = data["OrderID"].CodeConvertToInt
+		res.ConvertedDeliveryDocument = data["OrderID"].CodeConvertToInt
+		res.ConvertedOriginDocument = data["OrderID"].CodeConvertToInt
+		res.ConvertedReferenceDocument = data["OrderID"].CodeConvertToInt
+	}
+	if _, ok := data["OrderItem"]; ok {
+		res.ConvertingOrderItem = data["OrderItem"].CodeConvertFromString
+		res.ConvertedOrderItem = data["OrderItem"].CodeConvertToInt
+		res.ConvertedDeliveryDocumentItem = data["OrderItem"].CodeConvertToInt
+		res.ConvertedOriginDocumentItem = data["OrderItem"].CodeConvertToInt
+		res.ConvertedReferenceDocumentItem = data["OrderItem"].CodeConvertToInt
+	}
+
+	return res, nil
 }
 
-//func (psdc *SDC) ConvertToCodeConversionPartner(dataQueryGets *[]CodeConversionQueryGets) (*CodeConversionPartner, error) {
-//	var err error
-//
-//	dataMap := make(map[string]CodeConversionQueryGets, len(*dataQueryGets))
-//	for _, v := range *dataQueryGets {
-//		dataMap[v.LabelConvertTo] = v
-//	}
-//
-//	pm := &requests.CodeConversionPartner{}
-//
-//	pm.PartnerFunction = dataMap["PartnerFunction"].CodeConvertTo
-//	pm.BusinessPartner, err = ParseInt(dataMap["BusinessPartner"].CodeConvertTo)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	data := pm
-//	res := CodeConversionPartner{
-//		PartnerFunction: data.PartnerFunction,
-//		BusinessPartner: data.BusinessPartner,
-//	}
-//
-//	return &res, nil
-//}
+func (p *ProcessingFormatter) Address(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) []*Address {
+	res := make([]*Address, 0)
 
-func (psdc *SDC) ConvertToCodeConversionItem(dataQueryGets *[]CodeConversionQueryGets) (*CodeConversionItem, error) {
-	var err error
-
-	dataMap := make(map[string]CodeConversionQueryGets, len(*dataQueryGets))
-	for _, v := range *dataQueryGets {
-		dataMap[v.LabelConvertTo] = v
+	deliverToPartyAddress := deliverToPartyAddress(sdc, psdc)
+	if !postalCodeContains(deliverToPartyAddress.PostalCode, res) {
+		res = append(res, deliverToPartyAddress)
 	}
 
-	pm := &requests.CodeConversionItem{}
-
-	pm.InvoiceDocumentItemIdentifier = dataMap["InvoiceDocumentItem"].CodeConvertFrom
-	pm.InvoiceDocumentItem, err = ParseInt(dataMap["InvoiceDocumentItem"].CodeConvertTo)
-	if err != nil {
-		return nil, err
-	}
-	pm.InvoiceDocumentItemCategory = GetStringPtr(dataMap["InvoiceDocumentItemCategory"].CodeConvertTo)
-	pm.Buyer, err = ParseIntPtr(GetStringPtr(dataMap["Buyer"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.Seller, err = ParseIntPtr(GetStringPtr(dataMap["Seller"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.DeliverToParty, err = ParseIntPtr(GetStringPtr(dataMap["DeliverToParty"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.TransactionTaxClassification = GetStringPtr(dataMap["TransactionTaxClassification"].CodeConvertTo)
-	pm.Project = GetStringPtr(dataMap["Project"].CodeConvertTo)
-	pm.OrderID, err = ParseIntPtr(GetStringPtr(dataMap["OrderID"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.OrderItem, err = ParseIntPtr(GetStringPtr(dataMap["OrderItem"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.DeliveryDocument, err = ParseIntPtr(GetStringPtr(dataMap["DeliveryDocument"].CodeConvertTo))
-	if err != nil {
-		return nil, err
-	}
-	pm.DeliveryDocumentItem, err = ParseIntPtr(GetStringPtr(dataMap["DeliveryDocumentItem"].CodeConvertTo))
-	if err != nil {
-		return nil, err
+	billFromPartyAddress := billFromPartyAddress(sdc, psdc)
+	if !postalCodeContains(billFromPartyAddress.PostalCode, res) {
+		res = append(res, billFromPartyAddress)
 	}
 
-	data := pm
-	res := CodeConversionItem{
-		InvoiceDocumentItemIdentifier: data.InvoiceDocumentItemIdentifier,
-		InvoiceDocumentItem:           data.InvoiceDocumentItem,
-		InvoiceDocumentItemCategory:   data.InvoiceDocumentItemCategory,
-		Buyer:                         data.Buyer,
-		Seller:                        data.Seller,
-		DeliverToParty:                data.DeliverToParty,
-		TransactionTaxClassification:  data.TransactionTaxClassification,
-		Project:                       data.Project,
-		OrderID:                       data.OrderID,
-		OrderItem:                     data.OrderItem,
-		DeliveryDocument:              data.DeliveryDocument,
-		DeliveryDocumentItem:          data.DeliveryDocumentItem,
-		OriginDocument:                data.OrderID,
-		OriginDocumentItem:            data.OrderItem,
-		ReferenceDocument:             data.OrderID,
-		ReferenceDocumentItem:         data.OrderItem,
+	buyerAddress := buyerAddress(sdc, psdc)
+	if !postalCodeContains(buyerAddress.PostalCode, res) {
+		res = append(res, buyerAddress)
 	}
 
-	return &res, nil
+	sellerAddress := sellerAddress(sdc, psdc)
+	if !postalCodeContains(sellerAddress.PostalCode, res) {
+		res = append(res, sellerAddress)
+	}
+
+	return res
 }
 
-// func (psdc *SDC) ConvertToCodeConversionItemPricingElement(dataQueryGets *[]CodeConversionQueryGets) (*CodeConversionItemPricingElement, error) {
-// 	var err error
-//
-// 	dataMap := make(map[string]CodeConversionQueryGets, len(*dataQueryGets))
-// 	for _, v := range *dataQueryGets {
-// 		dataMap[v.LabelConvertTo] = v
-// 	}
-//
-// 	pm := &requests.CodeConversionItemPricingElement{}
-//
-// 	pm.PricingProcedureCounter, err = ParseInt(dataMap["PricingProcedureCounter"].CodeConvertTo)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	pm.ConditionRecord, err = ParseIntPtr(GetStringPtr(dataMap["ConditionRecord"].CodeConvertTo))
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	pm.ConditionSequentialNumber, err = ParseIntPtr(GetStringPtr(dataMap["ConditionSequentialNumber"].CodeConvertTo))
-// 	if err != nil {
-// 		return nil, err
-// 	}
-//
-// 	data := pm
-// 	res := CodeConversionItemPricingElement{
-// 		PricingProcedureCounter:   data.PricingProcedureCounter,
-// 		ConditionRecord:           data.ConditionRecord,
-// 		ConditionSequentialNumber: data.ConditionSequentialNumber,
-// 	}
-//
-// 	return &res, nil
-// }
+func deliverToPartyAddress(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) *Address {
+	dataHeader := psdc.Header
+	dataInputHeader := sdc.Header
+	dataInputItem := dataInputHeader.Item
 
-func (psdc *SDC) ConvertToConversionData() *[]ConversionData {
-	var res []ConversionData
-
-	for _, v := range *psdc.CodeConversionItem {
-		pm := &requests.ConversionData{}
-
-		pm.ExchangedInvoiceDocumentIdentifier = psdc.CodeConversionHeader.ExchangedInvoiceDocumentIdentifier
-		pm.InvoiceDocument = psdc.CodeConversionHeader.InvoiceDocument
-		pm.InvoiceDocumentItemIdentifier = v.InvoiceDocumentItemIdentifier
-		pm.InvoiceDocumentItem = v.InvoiceDocumentItem
-
-		data := pm
-		res = append(res, ConversionData{
-			ExchangedInvoiceDocumentIdentifier: data.ExchangedInvoiceDocumentIdentifier,
-			InvoiceDocument:                    data.InvoiceDocument,
-			InvoiceDocumentItemIdentifier:      data.InvoiceDocumentItemIdentifier,
-			InvoiceDocumentItem:                data.InvoiceDocumentItem,
-		})
+	res := &Address{
+		ConvertingInvoiceDocument: dataHeader.ConvertingInvoiceDocument,
+		PostalCode:                dataInputItem[0].ShipToPartyAddressPostalCode,
 	}
 
-	return &res
+	return res
 }
 
-// 個別処理
+func billFromPartyAddress(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) *Address {
+	dataHeader := psdc.Header
+
+	res := &Address{
+		ConvertingInvoiceDocument: dataHeader.ConvertingInvoiceDocument,
+		PostalCode:                sdc.Header.BillFromPartyAddressPostalCode,
+	}
+
+	return res
+}
+
+func buyerAddress(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) *Address {
+	dataHeader := psdc.Header
+
+	res := &Address{
+		ConvertingInvoiceDocument: dataHeader.ConvertingInvoiceDocument,
+		PostalCode:                sdc.Header.BuyerAddressPostalCode,
+	}
+
+	return res
+}
+
+func sellerAddress(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) *Address {
+	dataHeader := psdc.Header
+
+	res := &Address{
+		ConvertingInvoiceDocument: dataHeader.ConvertingInvoiceDocument,
+		PostalCode:                sdc.Header.SellerAddressPostalCode,
+	}
+
+	return res
+}
+
+func (p *ProcessingFormatter) Partner(sdc *dpfm_api_input_reader.SDC, psdc *ProcessingFormatterSDC) []*Partner {
+	res := make([]*Partner, 0)
+	dataHeader := psdc.Header
+
+	res = append(res, &Partner{
+		ConvertingInvoiceDocument: dataHeader.ConvertingInvoiceDocument,
+	})
+
+	return res
+}
+
+func (p *ProcessingFormatter) appendDataKey(dataKey *[]*ConversionProcessingKey, sdc *dpfm_api_input_reader.SDC, labelConvertFrom string, labelConvertTo string, codeConvertFrom any) {
+	switch v := codeConvertFrom.(type) {
+	case int, float32:
+		if v == 0 {
+			return
+		}
+	case string:
+		if v == "" {
+			return
+		}
+	case *int, *float32:
+		if v == nil {
+			return
+		}
+	case *string:
+		if v == nil || *v == "" {
+			return
+		}
+	default:
+		return
+	}
+	*dataKey = append(*dataKey, p.ConversionProcessingKey(sdc, labelConvertFrom, labelConvertTo, codeConvertFrom))
+}
+
+func postalCodeContains(postalCode *string, addresses []*Address) bool {
+	for _, address := range addresses {
+		if address.PostalCode == nil || postalCode == nil {
+			return true
+		}
+		if *address.PostalCode == *postalCode {
+			return true
+		}
+	}
+
+	return false
+}
+
+func bpIDIsNull(sdc *dpfm_api_input_reader.SDC) bool {
+	return sdc.BusinessPartnerID == nil
+}

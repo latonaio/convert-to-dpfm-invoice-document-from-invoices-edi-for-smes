@@ -1,6 +1,6 @@
 package requests
 
-type InvoicesEDIForSMEsItem struct {
+type Item struct {
 	ExchangedInvoiceDocumentIdentifier                               string   `json:"ExchangedInvoiceDocumentIdentifier"`
 	InvoiceDocumentItemIdentifier                                    string   `json:"InvoiceDocumentItemIdentifier"`
 	InvoiceDocumentItemCategoryCode                                  *string  `json:"InvoiceDocumentItemCategoryCode"`

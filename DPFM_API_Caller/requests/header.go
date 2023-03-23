@@ -1,21 +1,21 @@
 package requests
 
-type InvoicesEDIForSMEsHeader struct {
+type Header struct {
 	ExchangedInvoiceDocumentIdentifier                                           string   `json:"ExchangedInvoiceDocumentIdentifier"`
 	InvoiceDocument                                                              *string  `json:"InvoiceDocument"`
 	ExchangedDocumentContextSpecifiedTransactionIdentifier                       *string  `json:"ExchangedDocumentContextSpecifiedTransactionIdentifier"`
 	ExchangedDocumentContextProcessingTransactionDateTime                        *string  `json:"ExchangedDocumentContextProcessingTransactionDateTime"`
 	DocumentContextParameterIdentifier                                           *string  `json:"DocumentContextParameterIdentifier"`
 	DocumentContextParameterValueText                                            *string  `json:"DocumentContextParameterValueText"`
-	DocumentVersionIdentifierOfTransactionProcess                                *string  `json:"DocumentVersionIdentifier"`
-	DocumentVersionIssueDateOfTransactionProcess                                 *string  `json:"DocumentVersionIssueDate"`
+	DocumentVersionIdentifierOfTransactionProcess                                *string  `json:"DocumentVersionIdentifierOfTransactionProcess"`
+	DocumentVersionIssueDateOfTransactionProcess                                 *string  `json:"DocumentVersionIssueDateOfTransactionProcess"`
 	DocumentContextParameterScenarioIdentifier                                   *string  `json:"DocumentContextParameterScenarioIdentifier"`
 	DocumentContextParameterScenarioValueText                                    *string  `json:"DocumentContextParameterScenarioValueText"`
 	DocumentContextParameterApplicationIdentifier                                *string  `json:"DocumentContextParameterApplicationIdentifier"`
 	DocumentContextParameterApplicationValueText                                 *string  `json:"DocumentContextParameterApplicationValueText"`
 	DocumentContextParameterBusinessFieldIdentifier                              *string  `json:"DocumentContextParameterBusinessFieldIdentifier"`
 	DocumentContextParameterBusinessFieldValueText                               *string  `json:"DocumentContextParameterBusinessFieldValueText"`
-	DocumentVersionIdentifierOfBusinessFunction                                  *string  `json:"DocumentVersionIdentificationIdentifier"`
+	DocumentVersionIdentificationIdentifierOfBusinessFunction                    *string  `json:"DocumentVersionIdentificationIdentifierOfBusinessFunction"`
 	DocumentVersionIssueDateOfBusinessFunction                                   *string  `json:"DocumentVersionIssueDateOfBusinessFunction"`
 	ExchangedInvoiceDocumentName                                                 *string  `json:"ExchangedInvoiceDocumentName"`
 	ExchangedInvoiceDocumentTypeCode                                             *string  `json:"ExchangedInvoiceDocumentTypeCode"`
@@ -31,7 +31,7 @@ type InvoicesEDIForSMEsHeader struct {
 	ReferencedDocumentRevisionIdentifier                                         *string  `json:"ReferencedDocumentRevisionIdentifier"`
 	ReferencedDocumentInformationText                                            *string  `json:"ReferencedDocumentInformationText"`
 	ReferencedDocumentTypeCode                                                   *string  `json:"ReferencedDocumentTypeCode"`
-	IsAttachmentBinaryObject                                                     *bool    `json:"IsAttachmentBinaryObject"`
+	IsAttachmentBinaryObject                                                     *string  `json:"IsAttachmentBinaryObject"`
 	ReferencedDocumentSubtypeCode                                                *string  `json:"ReferencedDocumentSubtypeCode"`
 	SpecifiedBinaryFileIdentifier                                                *string  `json:"SpecifiedBinaryFileIdentifier"`
 	SpecifiedBinaryFileNameText                                                  *string  `json:"SpecifiedBinaryFileNameText"`
@@ -61,7 +61,7 @@ type InvoicesEDIForSMEsHeader struct {
 	TradeContactBuyerPersonName                                                  *string  `json:"TradeContactBuyerPersonName"`
 	TradeContactBuyerDepartmentName                                              *string  `json:"TradeContactBuyerDepartmentName"`
 	TradeContactBuyerPersonIdentifier                                            *string  `json:"TradeContactBuyerPersonIdentifier"`
-	BuyerTelephoneNumber                                                         *string  `json:"BuyerTelephoneNumber"`
+	BuyerPhoneNumber                                                             *string  `json:"BuyerPhoneNumber"`
 	BuyerFaxNumber                                                               *string  `json:"BuyerFaxNumber"`
 	BuyerEmailAddress                                                            *string  `json:"BuyerEmailAddress"`
 	BuyerAddressPostalCode                                                       *string  `json:"BuyerAddressPostalCode"`

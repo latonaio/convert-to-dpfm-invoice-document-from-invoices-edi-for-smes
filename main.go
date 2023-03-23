@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	convert_complementer "convert-to-dpfm-invoice-document-from-invoices-edi-for-smes/convert_complementer"
-
 	database "github.com/latonaio/golang-mysql-network-connector"
+	"golang.org/x/xerrors"
 
 	"github.com/latonaio/golang-logging-library-for-data-platform/logger"
 	rabbitmq "github.com/latonaio/rabbitmq-golang-client-for-data-platform"
@@ -28,7 +27,7 @@ func main() {
 	}
 	defer db.Close()
 
-	rmq, err := rabbitmq.NewRabbitmqClient(c.RMQ.URL(), c.RMQ.QueueFrom(), c.RMQ.SessionControlQueue(), c.RMQ.QueueTo(), 0)
+	rmq, err := rabbitmq.NewRabbitmqClient(c.RMQ.URL(), c.RMQ.QueueFrom(), "", c.RMQ.QueueTo(), 0)
 	if err != nil {
 		l.Fatal(err.Error())
 	}
@@ -40,7 +39,7 @@ func main() {
 
 	for msg := range iter {
 		start := time.Now()
-		sdc, err := callProcess(ctx, db, msg, c)
+		sdc, err := callProcess(ctx, db, rmq, msg, c)
 		if err != nil {
 			msg.Fail()
 			l.Error(err)
@@ -57,27 +56,40 @@ func getSessionID(data map[string]interface{}) string {
 	return id
 }
 
-func callProcess(ctx context.Context, db *database.Mysql, msg rabbitmq.RabbitmqMessage, c *config.Conf) (dpfm_api_output_formatter.SDC, error) {
+func callProcess(ctx context.Context, db *database.Mysql, rmq *rabbitmq.RabbitmqClient, msg rabbitmq.RabbitmqMessage, c *config.Conf) (dpfm_api_output_formatter.Output, error) {
 	var err error
 	l := logger.NewLogger()
 	defer func() {
 		if e := recover(); e != nil {
-			err = fmt.Errorf("error occurred: %w", e)
+			err = xerrors.Errorf("error occurred: %w", e)
 			return
 		}
 	}()
 	l.AddHeaderInfo(map[string]interface{}{"runtime_session_id": getSessionID(msg.Data())})
 
-	complementer := convert_complementer.NewConvertComplementer(ctx, db, l)
+	processingFormatter := dpfm_api_processing_formatter.NewProcessingFormatter(ctx, db, l)
 
 	sdc := dpfm_api_input_reader.ConvertToSDC(msg.Raw())
-	psdc := dpfm_api_processing_formatter.ConvertToSDC()
-	osdc := dpfm_api_output_formatter.ConvertToSDC(msg.Raw())
+	psdc := dpfm_api_processing_formatter.ConvertToProcessingFormatter()
+	osdc := dpfm_api_output_formatter.ConvertToOutput(msg.Raw())
 
-	err = complementer.CreateSdc(&sdc, &psdc, &osdc)
+	err = processingFormatter.ProcessingFormatter(&sdc, &psdc)
 	if err != nil {
+		osdc.APIProcessingResult = getBoolPtr(false)
+		osdc.APIProcessingError = err.Error()
+		rmq.Send(c.RMQ.QueueToErrResponse(), osdc)
 		return osdc, err
 	}
+
+	err = dpfm_api_output_formatter.OutputFormatter(&sdc, &psdc, &osdc)
+	if err != nil {
+		osdc.APIProcessingResult = getBoolPtr(false)
+		osdc.APIProcessingError = err.Error()
+		rmq.Send(c.RMQ.QueueToErrResponse(), osdc)
+		return osdc, err
+	}
+
+	rmq.Send(c.RMQ.QueueTo()[0], osdc)
 
 	return osdc, nil
 }

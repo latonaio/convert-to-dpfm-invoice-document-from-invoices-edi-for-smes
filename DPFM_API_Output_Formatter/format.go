@@ -3,150 +3,192 @@ package dpfm_api_output_formatter
 import (
 	dpfm_api_input_reader "convert-to-dpfm-invoice-document-from-invoices-edi-for-smes/DPFM_API_Input_Reader"
 	dpfm_api_processing_formatter "convert-to-dpfm-invoice-document-from-invoices-edi-for-smes/DPFM_API_Processing_Formatter"
-	"encoding/json"
 )
+
+func OutputFormatter(
+	sdc *dpfm_api_input_reader.SDC,
+	psdc *dpfm_api_processing_formatter.ProcessingFormatterSDC,
+	osdc *Output,
+) error {
+	header := ConvertToHeader(*sdc, *psdc)
+	item := ConvertToItem(*sdc, *psdc)
+	address := ConvertToAddress(*sdc, *psdc)
+	partner := ConvertToPartner(*sdc, *psdc)
+
+	osdc.DataConcatenation = DataConcatenation{
+		Header:  header,
+		Item:    item,
+		Address: address,
+		Partner: partner,
+	}
+
+	osdc.ServiceLabel = "FUNCTION_INVOICE_DOCUMENT_DATA_CONCATENATION"
+	osdc.APISchema = "DPFMDataConcatenation"
+	osdc.APIProcessingResult = getBoolPtr(true)
+
+	return nil
+}
 
 func ConvertToHeader(
 	sdc dpfm_api_input_reader.SDC,
-	psdc dpfm_api_processing_formatter.SDC,
-) (*Header, error) {
-	mappingHeader := psdc.MappingHeader
-	codeConversionHeader := psdc.CodeConversionHeader
+	psdc dpfm_api_processing_formatter.ProcessingFormatterSDC,
+) *Header {
+	dataProcessingHeader := psdc.Header
+	dataConversionProcessingHeader := psdc.ConversionProcessingHeader
 
-	header := Header{}
-
-	data, err := json.Marshal(mappingHeader)
-	if err != nil {
-		return nil, err
+	header := &Header{
+		InvoiceDocument:                   *dataConversionProcessingHeader.ConvertedInvoiceDocument,
+		CreationDate:                      dataProcessingHeader.CreationDate,
+		CreationTime:                      dataProcessingHeader.CreationTime,
+		LastChangeDate:                    dataProcessingHeader.LastChangeDate,
+		LastChangeTime:                    dataProcessingHeader.LastChangeTime,
+		BillToParty:                       dataConversionProcessingHeader.ConvertedBillToParty,
+		BillFromParty:                     dataConversionProcessingHeader.ConvertedBillFromParty,
+		Payer:                             dataConversionProcessingHeader.ConvertedPayer,
+		Payee:                             dataConversionProcessingHeader.ConvertedPayee,
+		InvoiceDocumentDate:               dataProcessingHeader.InvoiceDocumentDate,
+		InvoicePeriodStartDate:            dataProcessingHeader.InvoicePeriodStartDate,
+		InvoicePeriodEndDate:              dataProcessingHeader.InvoicePeriodEndDate,
+		AccountingPostingDate:             dataProcessingHeader.AccountingPostingDate,
+		TotalNetAmount:                    dataProcessingHeader.TotalNetAmount,
+		TotalTaxAmount:                    dataProcessingHeader.TotalTaxAmount,
+		TotalGrossAmount:                  dataProcessingHeader.TotalGrossAmount,
+		TransactionCurrency:               dataProcessingHeader.TransactionCurrency,
+		PaymentTerms:                      dataProcessingHeader.PaymentTerms,
+		PaymentDueDate:                    dataProcessingHeader.PaymentDueDate,
+		PaymentMethod:                     dataConversionProcessingHeader.ConvertedPaymentMethod,
+		DocumentHeaderText:                dataProcessingHeader.DocumentHeaderText,
+		HeaderIsCleared:                   dataProcessingHeader.HeaderIsCleared,
+		HeaderPaymentBlockStatus:          dataProcessingHeader.HeaderPaymentBlockStatus,
+		HeaderPaymentRequisitionIsCreated: dataProcessingHeader.HeaderPaymentRequisitionIsCreated,
+		IsCancelled:                       dataProcessingHeader.IsCancelled,
 	}
-	err = json.Unmarshal(data, &header)
-	if err != nil {
-		return nil, err
-	}
 
-	header.InvoiceDocument = codeConversionHeader.InvoiceDocument
-	header.BillToParty = codeConversionHeader.BillToParty
-	header.BillFromParty = codeConversionHeader.BillFromParty
-	header.Payer = codeConversionHeader.Payer
-	header.Payee = codeConversionHeader.Payee
-	header.PaymentTerms = codeConversionHeader.PaymentTerms
-	header.PaymentMethod = codeConversionHeader.PaymentMethod
-
-	return &header, nil
+	return header
 }
 
 func ConvertToItem(
 	sdc dpfm_api_input_reader.SDC,
-	psdc dpfm_api_processing_formatter.SDC,
-) (*[]Item, error) {
-	var items []Item
-	mappingItem := psdc.MappingItem
-	codeConversionItem := psdc.CodeConversionItem
-	conversionData := psdc.ConversionData
+	psdc dpfm_api_processing_formatter.ProcessingFormatterSDC,
+) []*Item {
+	dataProcessingItem := psdc.Item
+	dataConversionProcessingHeader := psdc.ConversionProcessingHeader
+	dataConversionProcessingItem := psdc.ConversionProcessingItem
 
-	for i := range *mappingItem {
-		item := Item{}
-
-		data, err := json.Marshal((*mappingItem)[i])
-		if err != nil {
-			return nil, err
+	items := make([]*Item, 0)
+	for i := range dataProcessingItem {
+		item := &Item{
+			InvoiceDocument:                 *dataConversionProcessingHeader.ConvertedInvoiceDocument,
+			InvoiceDocumentItem:             *dataConversionProcessingItem[i].ConvertedInvoiceDocumentItem,
+			InvoiceDocumentItemText:         dataProcessingItem[i].InvoiceDocumentItemText,
+			Product:                         dataConversionProcessingItem[i].ConvertedProduct,
+			CreationDate:                    dataProcessingItem[i].CreationDate,
+			CreationTime:                    dataProcessingItem[i].CreationTime,
+			LastChangeDate:                  dataProcessingItem[i].LastChangeDate,
+			LastChangeTime:                  dataProcessingItem[i].LastChangeTime,
+			Buyer:                           dataConversionProcessingItem[i].ConvertedBuyer,
+			Seller:                          dataConversionProcessingItem[i].ConvertedSeller,
+			DeliverToParty:                  dataConversionProcessingItem[i].ConvertedDeliverToParty,
+			InvoiceQuantity:                 dataProcessingItem[i].InvoiceQuantity,
+			InvoiceQuantityUnit:             dataProcessingItem[i].InvoiceQuantityUnit,
+			InvoiceQuantityInBaseUnit:       dataProcessingItem[i].InvoiceQuantityInBaseUnit,
+			BaseUnit:                        dataProcessingItem[i].BaseUnit,
+			NetAmount:                       dataProcessingItem[i].NetAmount,
+			GrossAmount:                     dataProcessingItem[i].GrossAmount,
+			TransactionCurrency:             dataProcessingItem[i].TransactionCurrency,
+			Project:                         dataConversionProcessingItem[i].ConvertedProject,
+			OrderID:                         dataConversionProcessingItem[i].ConvertedOrderID,
+			OrderItem:                       dataConversionProcessingItem[i].ConvertedOrderItem,
+			InvoicePeriodStartDate:          dataProcessingItem[i].InvoicePeriodStartDate,
+			InvoicePeriodEndDate:            dataProcessingItem[i].InvoicePeriodEndDate,
+			DeliveryDocument:                dataConversionProcessingItem[i].ConvertedDeliveryDocument,
+			DeliveryDocumentItem:            dataConversionProcessingItem[i].ConvertedDeliveryDocumentItem,
+			OriginDocument:                  dataConversionProcessingItem[i].ConvertedOriginDocument,
+			OriginDocumentItem:              dataConversionProcessingItem[i].ConvertedOriginDocumentItem,
+			ReferenceDocument:               dataConversionProcessingItem[i].ConvertedReferenceDocument,
+			ReferenceDocumentItem:           dataConversionProcessingItem[i].ConvertedReferenceDocumentItem,
+			ItemPaymentRequisitionIsCreated: dataProcessingItem[i].ItemPaymentRequisitionIsCreated,
+			ItemIsCleared:                   dataProcessingItem[i].ItemIsCleared,
+			ItemPaymentBlockStatus:          dataProcessingItem[i].ItemPaymentBlockStatus,
+			IsCancelled:                     dataProcessingItem[i].IsCancelled,
 		}
-		err = json.Unmarshal(data, &item)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, v := range *conversionData {
-			if v.ExchangedInvoiceDocumentIdentifier == (*mappingItem)[i].ExchangedInvoiceDocumentIdentifier {
-				item.InvoiceDocument = v.InvoiceDocument
-				break
-			}
-		}
-		item.InvoiceDocumentItem = (*codeConversionItem)[i].InvoiceDocumentItem
-		item.InvoiceDocumentItemCategory = (*codeConversionItem)[i].InvoiceDocumentItemCategory
-		item.Buyer = (*codeConversionItem)[i].Buyer
-		item.Seller = (*codeConversionItem)[i].Seller
-		item.DeliverToParty = (*codeConversionItem)[i].DeliverToParty
-		item.TransactionTaxClassification = (*codeConversionItem)[i].TransactionTaxClassification
-		item.Project = (*codeConversionItem)[i].Project
-		item.OrderID = (*codeConversionItem)[i].OrderID
-		item.OrderItem = (*codeConversionItem)[i].OrderItem
-		item.DeliveryDocument = (*codeConversionItem)[i].DeliveryDocument
-		item.DeliveryDocumentItem = (*codeConversionItem)[i].DeliveryDocumentItem
-		item.OriginDocument = (*codeConversionItem)[i].OriginDocument
-		item.OriginDocumentItem = (*codeConversionItem)[i].OriginDocumentItem
-		item.ReferenceDocument = (*codeConversionItem)[i].ReferenceDocument
-		item.ReferenceDocumentItem = (*codeConversionItem)[i].ReferenceDocumentItem
 
 		items = append(items, item)
 	}
 
-	return &items, nil
+	return items
 }
 
 func ConvertToItemPricingElement(
 	sdc dpfm_api_input_reader.SDC,
-	psdc dpfm_api_processing_formatter.SDC,
-) (*[]ItemPricingElement, error) {
-	var itemPricingElements []ItemPricingElement
-	mappingItemPricingElement := psdc.MappingItemPricingElement
-	conversionData := psdc.ConversionData
+	psdc dpfm_api_processing_formatter.ProcessingFormatterSDC,
+) []*ItemPricingElement {
+	dataProcessingItemPricingElement := psdc.ItemPricingElement
+	dataConversionProcessingHeader := psdc.ConversionProcessingHeader
+	dataConversionProcessingItem := psdc.ConversionProcessingItem
 
-	for i := range *mappingItemPricingElement {
-		itemPricingElement := ItemPricingElement{}
-
-		data, err := json.Marshal((*mappingItemPricingElement)[i])
-		if err != nil {
-			return nil, err
-		}
-		err = json.Unmarshal(data, &itemPricingElement)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, v := range *conversionData {
-			if v.ExchangedInvoiceDocumentIdentifier == (*mappingItemPricingElement)[i].ExchangedInvoiceDocumentIdentifier && v.InvoiceDocumentItemIdentifier == (*mappingItemPricingElement)[i].InvoiceDocumentItemIdentifier {
-				itemPricingElement.InvoiceDocument = v.InvoiceDocument
-				itemPricingElement.InvoiceDocumentItem = v.InvoiceDocumentItem
-				break
-			}
-		}
-
-		itemPricingElements = append(itemPricingElements, itemPricingElement)
+	dataConversionProcessingItemMap := make(map[string]*dpfm_api_processing_formatter.ConversionProcessingItem, len(dataConversionProcessingItem))
+	for _, v := range dataConversionProcessingItem {
+		dataConversionProcessingItemMap[*v.ConvertingInvoiceDocumentItem] = v
 	}
 
-	return &itemPricingElements, nil
+	itemPricingElements := make([]*ItemPricingElement, 0)
+	for i, v := range dataProcessingItemPricingElement {
+		if _, ok := dataConversionProcessingItemMap[v.ConvertingInvoiceDocumentItem]; !ok {
+			continue
+		}
+
+		itemPricingElements = append(itemPricingElements, &ItemPricingElement{
+			InvoiceDocument:            *dataConversionProcessingHeader.ConvertedInvoiceDocument,
+			InvoiceDocumentItem:        *dataConversionProcessingItemMap[v.ConvertingInvoiceDocumentItem].ConvertedInvoiceDocumentItem,
+			ConditionRateValue:         dataProcessingItemPricingElement[i].ConditionRateValue,
+			ConditionCurrency:          dataProcessingItemPricingElement[i].ConditionCurrency,
+			ConditionQuantity:          dataProcessingItemPricingElement[i].ConditionQuantity,
+			ConditionQuantityUnit:      dataProcessingItemPricingElement[i].ConditionQuantityUnit,
+			ConditionAmount:            dataProcessingItemPricingElement[i].ConditionAmount,
+			TransactionCurrency:        dataProcessingItemPricingElement[i].TransactionCurrency,
+			ConditionIsManuallyChanged: dataProcessingItemPricingElement[i].ConditionIsManuallyChanged,
+		})
+	}
+
+	return itemPricingElements
+}
+
+func ConvertToAddress(
+	sdc dpfm_api_input_reader.SDC,
+	psdc dpfm_api_processing_formatter.ProcessingFormatterSDC,
+) []*Address {
+	dataConversionProcessingHeader := psdc.ConversionProcessingHeader
+	data := psdc.Address
+
+	addresses := make([]*Address, 0)
+	for _, data := range data {
+		addresses = append(addresses, &Address{
+			InvoiceDocument: *dataConversionProcessingHeader.ConvertedInvoiceDocument,
+			PostalCode:      data.PostalCode,
+		})
+	}
+
+	return addresses
 }
 
 func ConvertToPartner(
 	sdc dpfm_api_input_reader.SDC,
-	psdc dpfm_api_processing_formatter.SDC,
-) (*[]Partner, error) {
-	var partners []Partner
-	mappingPartner := psdc.MappingPartner
-	conversionData := psdc.ConversionData
+	psdc dpfm_api_processing_formatter.ProcessingFormatterSDC,
+) []*Partner {
+	dataProcessingPartner := psdc.Partner
+	dataConversionProcessingHeader := psdc.ConversionProcessingHeader
 
-	for i := range *mappingPartner {
-		partner := Partner{}
-
-		data, err := json.Marshal((*mappingPartner)[i])
-		if err != nil {
-			return nil, err
-		}
-		err = json.Unmarshal(data, &partner)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, v := range *conversionData {
-			if v.ExchangedInvoiceDocumentIdentifier == (*mappingPartner)[i].ExchangedInvoiceDocumentIdentifier {
-				partner.InvoiceDocument = v.InvoiceDocument
-				break
-			}
-		}
-
-		partners = append(partners, partner)
+	partners := make([]*Partner, 0)
+	for range dataProcessingPartner {
+		partners = append(partners, &Partner{
+			InvoiceDocument: *dataConversionProcessingHeader.ConvertedInvoiceDocument,
+		})
 	}
 
-	return &partners, nil
+	return partners
+}
+
+func getBoolPtr(b bool) *bool {
+	return &b
 }

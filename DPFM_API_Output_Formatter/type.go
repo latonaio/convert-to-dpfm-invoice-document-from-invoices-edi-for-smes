@@ -1,27 +1,29 @@
 package dpfm_api_output_formatter
 
-type SDC struct {
-	ConnectionKey       string      `json:"connection_key"`
-	Result              bool        `json:"result"`
-	RedisKey            string      `json:"redis_key"`
-	Filepath            string      `json:"filepath"`
-	APIStatusCode       int         `json:"api_status_code"`
-	RuntimeSessionID    string      `json:"runtime_session_id"`
-	BusinessPartnerID   *int        `json:"business_partner"`
-	ServiceLabel        string      `json:"service_label"`
-	Message             interface{} `json:"message"`
-	APISchema           string      `json:"api_schema"`
-	Accepter            []string    `json:"accepter"`
-	Deleted             bool        `json:"deleted"`
-	APIProcessingResult *bool       `json:"api_processing_result"`
-	APIProcessingError  string      `json:"api_processing_error"`
+type Output struct {
+	ConnectionKey       string            `json:"connection_key"`
+	Result              bool              `json:"result"`
+	RedisKey            string            `json:"redis_key"`
+	Filepath            string            `json:"filepath"`
+	APIStatusCode       int               `json:"api_status_code"`
+	RuntimeSessionID    string            `json:"runtime_session_id"`
+	BusinessPartnerID   *int              `json:"business_partner"`
+	ServiceLabel        string            `json:"service_label"`
+	APIType             string            `json:"api_type"`
+	DataConcatenation   DataConcatenation `json:"DataConcatenation"`
+	APISchema           string            `json:"api_schema"`
+	Accepter            []string          `json:"accepter"`
+	Deleted             bool              `json:"deleted"`
+	APIProcessingResult *bool             `json:"api_processing_result"`
+	APIProcessingError  string            `json:"api_processing_error"`
 }
 
-type Message struct {
-	Header             Header               `json:"Header"`
-	Partner            []Partner            `json:"Partner"`
-	Item               []Item               `json:"Item"`
-	ItemPricingElement []ItemPricingElement `json:"ItemPricingElement"`
+type DataConcatenation struct {
+	Header             *Header               `json:"Header"`
+	Partner            []*Partner            `json:"Partner"`
+	Item               []*Item               `json:"Item"`
+	ItemPricingElement []*ItemPricingElement `json:"ItemPricingElement"`
+	Address            []*Address            `json:"Address"`
 }
 
 type Header struct {
@@ -59,24 +61,10 @@ type Header struct {
 	PaymentMethod                     *string  `json:"PaymentMethod"`
 	ExternalReferenceDocument         *string  `json:"ExternalReferenceDocument"`
 	DocumentHeaderText                *string  `json:"DocumentHeaderText"`
+	HeaderIsCleared                   *bool    `json:"HeaderIsCleared"`
 	HeaderPaymentBlockStatus          *bool    `json:"HeaderPaymentBlockStatus"`
 	HeaderPaymentRequisitionIsCreated *bool    `json:"HeaderPaymentRequisitionIsCreated"`
-	InvoiceDocumentIsCancelled        *bool    `json:"InvoiceDocumentIsCancelled"`
-	CancelledInvoiceDocument          *int     `json:"CancelledInvoiceDocument"`
-}
-
-type Partner struct {
-	InvoiceDocument         int     `json:"InvoiceDocument"`
-	PartnerFunction         string  `json:"PartnerFunction"`
-	BusinessPartner         int     `json:"BusinessPartner"`
-	BusinessPartnerFullName *string `json:"BusinessPartnerFullName"`
-	BusinessPartnerName     *string `json:"BusinessPartnerName"`
-	Organization            *string `json:"Organization"`
-	Country                 *string `json:"Country"`
-	Language                *string `json:"Language"`
-	Currency                *string `json:"Currency"`
-	ExternalDocumentID      *string `json:"ExternalDocumentID"`
-	AddressID               *int    `json:"AddressID"`
+	IsCancelled                       *bool    `json:"IsCancelled"`
 }
 
 type Item struct {
@@ -136,7 +124,7 @@ type Item struct {
 	OrderType                               *string  `json:"OrderType"`
 	ContractType                            *string  `json:"ContractType"`
 	OrderVaridityStartDate                  *string  `json:"OrderVaridityStartDate"`
-	OrderValidityEndDate                    *string  `json:"OrderValidityEndDate"`
+	OrderVaridityEndDate                    *string  `json:"OrderVaridityEndDate"`
 	InvoicePeriodStartDate                  *string  `json:"InvoicePeriodStartDate"`
 	InvoicePeriodEndDate                    *string  `json:"InvoicePeriodEndDate"`
 	DeliveryDocument                        *int     `json:"DeliveryDocument"`
@@ -152,9 +140,9 @@ type Item struct {
 	CountryOfOrigin                         *string  `json:"CountryOfOrigin"`
 	CountryOfOriginLanguage                 *string  `json:"CountryOfOriginLanguage"`
 	ItemPaymentRequisitionIsCreated         *bool    `json:"ItemPaymentRequisitionIsCreated"`
+	ItemIsCleared                           *bool    `json:"ItemIsCleared"`
 	ItemPaymentBlockStatus                  *bool    `json:"ItemPaymentBlockStatus"`
-	ItemIsCancelled                         *bool    `json:"ItemIsCancelled"`
-	ItemIsDeleted                           *bool    `json:"ItemIsDeleted"`
+	IsCancelled                             *bool    `json:"IsCancelled"`
 }
 
 type ItemPricingElement struct {
@@ -187,4 +175,18 @@ type Address struct {
 	Building        *string `json:"Building"`
 	Floor           *int    `json:"Floor"`
 	Room            *int    `json:"Room"`
+}
+
+type Partner struct {
+	InvoiceDocument         int     `json:"InvoiceDocument"`
+	PartnerFunction         string  `json:"PartnerFunction"`
+	BusinessPartner         int     `json:"BusinessPartner"`
+	BusinessPartnerFullName *string `json:"BusinessPartnerFullName"`
+	BusinessPartnerName     *string `json:"BusinessPartnerName"`
+	Organization            *string `json:"Organization"`
+	Country                 *string `json:"Country"`
+	Language                *string `json:"Language"`
+	Currency                *string `json:"Currency"`
+	ExternalDocumentID      *string `json:"ExternalDocumentID"`
+	AddressID               *int    `json:"AddressID"`
 }

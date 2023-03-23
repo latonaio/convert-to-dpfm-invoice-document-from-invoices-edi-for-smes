@@ -9,12 +9,12 @@ spec:
   selector:
     matchLabels:
       run: convert-to-dpfm-invoice-document-from-invoices-edi-for-smes
-      app: INVOICE_DOCUMENT
+      app: CONVERT_TO_DPFM_INVOICE_DOCUMENT_FROM_INVOICES_EDI_FOR_SMES
   template:
     metadata:
       labels:
         run: convert-to-dpfm-invoice-document-from-invoices-edi-for-smes
-        app: INVOICE_DOCUMENT
+        app: CONVERT_TO_DPFM_INVOICE_DOCUMENT_FROM_INVOICES_EDI_FOR_SMES
     spec:
       hostname: convert-to-dpfm-invoice-document-from-invoices-edi-for-smes
       containers:
@@ -25,10 +25,10 @@ spec:
             - name: "RMQ_QUEUE_FROM"
               value: "convert-to-dpfm-invoice-document-from-invoices-edi-for-smes-queue"
             - name: "RMQ_QUEUE_TO"
-              value: "convert-to-dpfm-invoice-document-from-invoices-edi-for-smes-queue"
-            - name: "RMQ_SESSION_CONTROL_QUEUE"
-              value: "data-platform-api-invoice-document-creates-session-control-queue"
-            - name: "DB_NAME"
+              value: "data-platform-api-data-concatenation-queue"
+            - name : "NESTJS_DATA_CONNECTION_REQUEST_CONTROL_MANAGER_CONSUME"
+              value: "nestjs-data-connection-request-control-manager-consume"
+            - name: "MYSQL_DB_NAME"
               value: "DataPlatformMastersAndTransactionsMysqlKube"
           envFrom:
             - configMapRef:
@@ -51,4 +51,4 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
-      nodePort: 30908
+      nodePort: 30929
